@@ -175,6 +175,12 @@ module.exports = {
       });
       if (!item)
         throw { statusCode: 422, message: `Item ${it.itemId} not found` };
+      // Item nonaktif tidak boleh ditarik ke PO baru.
+      if (item.isActive === false)
+        throw {
+          statusCode: 422,
+          message: `Item ${it.itemId} is inactive and cannot be added to a purchase order`,
+        };
     }
     // Transaction – withTransactionRetry: longer timeout + retry on
     // transient conflict/timeout so PO creation doesn't 500 randomly.
@@ -331,6 +337,12 @@ module.exports = {
       where: { id: Number(itemId) },
     });
     if (!item) throw { statusCode: 422, message: "Item not found" };
+    // Item nonaktif tidak boleh ditarik ke PO.
+    if (item.isActive === false)
+      throw {
+        statusCode: 422,
+        message: `Item ${itemId} is inactive and cannot be added to a purchase order`,
+      };
     const poItem = await prisma.purchaseOrderItem.create({
       data: { poId, itemId, qtyPO, hargaPO },
       include: { item: true },

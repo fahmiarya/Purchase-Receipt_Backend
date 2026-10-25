@@ -1,5 +1,5 @@
 
-const { success, created, ok, errorResponse, noContent } = require('../utils/response');
+const { success, created, ok, errorResponse } = require('../utils/response');
 const itemService = require('../services/item.service');
 
 module.exports = {
@@ -51,11 +51,13 @@ module.exports = {
     }
   },
 
-  async deleteItem(request, reply) {
+  async toggleItemStatus(request, reply) {
     try {
       const id = Number(request.params.id);
-      await itemService.deleteItem(request.server.prisma, id);
-      return reply.code(204).send(noContent());
+      const result = await itemService.toggleItemStatus(
+        request.server.prisma, id, request.body.isActive,
+      );
+      return reply.send(ok(result, result.isActive ? 'Item activated' : 'Item deactivated'));
     } catch (err) {
       return reply.code(err.statusCode ?? 500).send(errorResponse(err.message, err.details));
     }

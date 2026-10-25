@@ -1,6 +1,8 @@
 
 module.exports = async function (fastify) {
-  const { listItemSchema, createItemSchema, updateItemSchema } = require('../schemas/item.schema');
+  const {
+    listItemSchema, createItemSchema, updateItemSchema, toggleItemStatusSchema,
+  } = require('../schemas/item.schema');
   const itemHandler = require('../handlers/item.handler');
 
   fastify.get('/items', { schema: { querystring: listItemSchema } }, itemHandler.listItems);
@@ -8,5 +10,6 @@ module.exports = async function (fastify) {
   fastify.get('/items/:id/stock', itemHandler.getItemStock);
   fastify.post('/items', { schema: { body: createItemSchema } }, itemHandler.createItem);
   fastify.put('/items/:id', { schema: { body: updateItemSchema } }, itemHandler.updateItem);
-  fastify.delete('/items/:id', itemHandler.deleteItem);
+  // Item is never deleted (soft disable only). Body: { isActive: boolean }.
+  fastify.patch('/items/:id/toggle-status', { schema: { body: toggleItemStatusSchema } }, itemHandler.toggleItemStatus);
 };

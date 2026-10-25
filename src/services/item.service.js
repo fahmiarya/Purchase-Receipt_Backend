@@ -43,6 +43,11 @@ module.exports = {
         { name: { contains: query.search } },
       ];
     }
+    // Default HANYA item aktif; `include_inactive=true` mengabaikan filter ini.
+    const includeInactive = query?.include_inactive === 'true' || query?.include_inactive === '1';
+    if (!includeInactive) {
+      where.isActive = true;
+    }
     const items = await prisma.item.findMany({ where, skip: query?.skip, take: query?.take });
     return items;
   },
@@ -124,11 +129,11 @@ module.exports = {
     return updated;
   },
 
-  async deleteItem(prisma, id) {
-    // Prevent deletion if the item is referenced in PO or GR items
-    const related = await prisma.purchaseOrderItem.findFirst({ where: { itemId: id } })
-      .then(res => !!res);
-    if (related) throw { statusCode: 422, message: 'Item is used in purchase orders and cannot be deleted' };
-    await prisma.item.delete({ where: { id } });
+  // PATCH /items/:id/toggle-status — soft disable/enable, TIDAK ada delete.
+  // Body eksplisit { isActive } supaya idempotent (dobel-request tidak membalik status).
+  async toggleItemStatus(prisma, id, isActive) {
+    const item = await prisma.item.findUnique({ where: { id } });
+    if (!item) throw { statusCode: 404, message: 'Item not found' };
+    return prisma.item.update({ where: { id }, data: { isActive } });
   },
 };

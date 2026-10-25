@@ -10,13 +10,15 @@
 //   - stock    : dimulai dari 0
 
 module.exports = {
-  // List items – optional query filters
+  // List items – optional query filters.
+  // Default HANYA item aktif; kirim `include_inactive=true` untuk melihat semua.
   listItemSchema: {
     type: "object",
     additionalProperties: false,
     properties: {
       category_code: { type: "string" },
       search: { type: "string" },
+      include_inactive: { type: "string", enum: ["true", "1"] },
       skip: { type: "integer", minimum: 0 },
       take: { type: "integer", minimum: 1 },
     },
@@ -44,6 +46,17 @@ module.exports = {
       name: { type: "string" },
       brandCode: { type: "string" },
       uom: { type: "string" },
+    },
+  },
+  // PATCH /items/:id/toggle-status — body eksplisit (idempotent):
+  //   { isActive: false } → nonaktifkan, { isActive: true } → aktifkan.
+  // Item tidak pernah dihapus (soft disable); request dobel tidak membalik status.
+  toggleItemStatusSchema: {
+    type: "object",
+    required: ["isActive"],
+    additionalProperties: false,
+    properties: {
+      isActive: { type: "boolean" },
     },
   },
 };

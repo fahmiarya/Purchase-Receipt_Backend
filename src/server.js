@@ -1,12 +1,20 @@
 require("dotenv").config();
 const fastify = require("fastify")({ logger: true });
+const cors = require("@fastify/cors");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 fastify.decorate("prisma", prisma);
 
+// CORS – allow requests from the Flutter web frontend (any localhost port).
+fastify.register(cors, { origin: true });
+
 // Error handler
 fastify.setErrorHandler((error, request, reply) => {
+  // Always log the failing error (incl. stack) so intermittent 500s are
+  // diagnosable from docker logs.
+  request.log.error({ err: error, reqId: request.id, url: request.url },
+    "request failed");
   const status = error.statusCode ?? 500;
   reply.code(status).send({
     success: false,

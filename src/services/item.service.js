@@ -1,12 +1,42 @@
 // src/services/item.service.js
 // Service layer for Item master data, including auto‑generation of the `code`
-// according to the rule: the last segment (sequence) increments when the
-// preceding parts (category, brand) are identical.
+// according to the rule documented in REQUIREMENTS.md:
+//   code = {L1}-{L2}-{L3}-{brandCode}-{sequence}   e.g. A-AA-PPR-000-001
+// The sequence increments when the preceding parts (category, brand) match.
+
+// Resolve the full hierarchy prefix for a category code, e.g. PPR → A-AA-PPR.
+async function categoryPrefix(prisma, code) {
+  const category = await prisma.itemCategory.findUnique({
+    where: { code },
+    select: { code: true, parentCode: true },
+  });
+  if (!category) return [code];
+  if (!category.parentCode) return [category.code];
+  const parentPrefix = await categoryPrefix(prisma, category.parentCode);
+  return [...parentPrefix, category.code];
+}
+
+// Resolve all category codes consisting of [code] itself plus all descendants
+// (any depth). Used so `?category_code=` can filter at any hierarchy level.
+async function descendantCodes(prisma, code) {
+  const all = [code];
+  const children = await prisma.itemCategory.findMany({
+    where: { parentCode: code },
+    select: { code: true },
+  });
+  for (const child of children) {
+    all.push(...(await descendantCodes(prisma, child.code)));
+  }
+  return all;
+}
 
 module.exports = {
   async listItems(prisma, query) {
     const where = {};
-    if (query?.category_code) where.itemCategoryCode = query.category_code;
+    if (query?.category_code) {
+      const codes = await descendantCodes(prisma, query.category_code);
+      where.itemCategoryCode = { in: codes };
+    }
     if (query?.search) {
       where.OR = [
         { code: { contains: query.search } },
@@ -29,29 +59,33 @@ module.exports = {
     return { stock: item.stock };
   },
 
-  // Create item – `code` is generated automatically.
+  // Create item. Client hanya mengirim { name, itemCategoryCode, brandCode, uom }.
+  // `code`, `sequence`, dan `stock` di-handle otomatis oleh backend:
+  //   - code     : {L1}-{L2}-{L3}-{brandCode}-{sequence}
+  //   - sequence : urutan berikutnya untuk kombinasi kategori + brand yang sama
+  //   - stock    : dimulai dari 0
   async createItem(prisma, payload) {
-    const { name, itemCategoryCode, brandCode = '000', uom, stock = 0 } = payload;
+    const { name, itemCategoryCode, brandCode = '000', uom } = payload;
 
-    // Determine the next sequence for the given category/brand combination
+    // Auto-generate: sequence increments within the same category + brand.
     const last = await prisma.item.findFirst({
       where: { itemCategoryCode, brandCode },
       orderBy: { sequence: 'desc' },
       select: { sequence: true },
     });
-    const nextSeq = (last?.sequence ?? 0) + 1;
+    let nextSeq = (last?.sequence ?? 0) + 1;
 
-    // Build the code. For simplicity we use the category code as the first three
-    // segments (L1‑L3) and append brand + padded sequence.
-    const code = `${itemCategoryCode}-${brandCode}-${String(nextSeq).padStart(3, '0')}`;
+    const prefix = (await categoryPrefix(prisma, itemCategoryCode)).join('-');
+    let uniqueCode = `${prefix}-${brandCode}-${String(nextSeq).padStart(3, '0')}`;
 
-    let uniqueCode = code;
-    let seq = nextSeq;
     // Ensure generated code is unique; increment sequence if needed
+    let seq = nextSeq;
     while (await prisma.item.findUnique({ where: { code: uniqueCode } })) {
       seq += 1;
-      uniqueCode = `${itemCategoryCode}-${brandCode}-${String(seq).padStart(3, '0')}`;
+      uniqueCode = `${prefix}-${brandCode}-${String(seq).padStart(3, '0')}`;
     }
+    nextSeq = seq;
+
     // Ensure the referenced ItemCategory exists (create a placeholder if needed)
     await prisma.itemCategory.upsert({
       where: { code: itemCategoryCode },
@@ -59,18 +93,30 @@ module.exports = {
       update: {},
     });
 
-const created = await prisma.item.create({
-  data: {
-    code: uniqueCode,
-    name,
-    itemCategoryCode,
-    brandCode,
-    sequence: seq,
-    uom,
-    stock,
-  },
-});
-    return created;
+    try {
+      const created = await prisma.item.create({
+        data: {
+          code: uniqueCode,
+          name,
+          itemCategoryCode,
+          brandCode,
+          sequence: nextSeq,
+          uom,
+          stock: 0,
+        },
+      });
+      return created;
+    } catch (err) {
+      // P2002 = unique constraint violation (code or category+brand+sequence)
+      if (err?.code === 'P2002') {
+        throw {
+          statusCode: 422,
+          message: 'Item code or (category, brand, sequence) combination already exists',
+          details: err.meta,
+        };
+      }
+      throw err;
+    }
   },
 
   async updateItem(prisma, id, payload) {

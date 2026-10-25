@@ -1,49 +1,46 @@
-// src/server.js
-require('dotenv').config();
-const fastify = require('fastify')({ logger: true });
-const { PrismaClient } = require('@prisma/client');
+require("dotenv").config();
+const fastify = require("fastify")({ logger: true });
+const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-// Make Prisma available to routes
-fastify.decorate('prisma', prisma);
+fastify.decorate("prisma", prisma);
 
-// Health check endpoint
-fastify.get('/health', async (request, reply) => ({ status: 'ok' }));
-
-// Global response wrapper – ensures all successful responses follow the spec
-fastify.addHook('onSend', async (request, reply, payload) => {
-  // If payload is already a string (JSON) try to parse it
-  let data;
-  try {
-    data = JSON.parse(payload);
-  } catch {
-    return payload; // not JSON, send as‑is
-  }
-  // If it's already in the spec format (has success flag), leave it untouched
-  if (data && typeof data === 'object' && 'success' in data) {
-    return payload;
-  }
-  // Wrap the payload
-  const wrapped = {
-    success: true,
-    data,
-    message: '',
-  };
-  return JSON.stringify(wrapped);
+// Error handler
+fastify.setErrorHandler((error, request, reply) => {
+  const status = error.statusCode ?? 500;
+  reply.code(status).send({
+    success: false,
+    error: error.message || "Internal Server Error",
+    details: error.validation || null,
+  });
 });
 
-// Register route plugins with API version prefix
-fastify.register(require('./routes/item'), { prefix: '/api/v1' });
-fastify.register(require('./routes/vendor'), { prefix: '/api/v1' });
-fastify.register(require('./routes/purchaseOrder'), { prefix: '/api/v1' });
-fastify.register(require('./routes/goodsReceipt'), { prefix: '/api/v1' });
-fastify.register(require('./routes/itemCategory'), { prefix: '/api/v1' });
+// Not found handler
+fastify.setNotFoundHandler((request, reply) => {
+  reply.code(404).send({
+    success: false,
+    error: `Route ${request.method}:${request.url} not found`,
+    details: null,
+  });
+});
 
+// Routes
+fastify.register(
+  async (app) => {
+    app.get("/health", async () => ({ success: true, data: { status: "ok" } }));
+    app.register(require("./routes/item.routes"));
+    app.register(require("./routes/po.routes"));
+    app.register(require("./routes/gr.routes"));
+  },
+  { prefix: "/api/v1" },
+);
 
 const start = async () => {
   try {
-    await fastify.listen({ port: process.env.APP_PORT || 8080, host: '0.0.0.0' });
-    fastify.log.info(`Server listening on ${fastify.server.address().port}`);
+    await fastify.listen({
+      port: process.env.APP_PORT || 8080,
+      host: "0.0.0.0",
+    });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

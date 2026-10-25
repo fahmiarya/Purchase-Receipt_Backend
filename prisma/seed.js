@@ -79,7 +79,7 @@ async function main() {
   }
 
   // -------------------------------------------------------------------
-  // 3️⃣ Items – sample catalogue (as listed in REQUIREMENTS.md)
+  // 3️⃣ Items – sample catalogue
   // -------------------------------------------------------------------
   const items = [
     { code: 'A-AA-PPR-000-001', name: 'PP Homopolymer Natural',    itemCategoryCode: 'PPR', brandCode: '000', sequence: 1, uom: 'kg',  stock: 0 },

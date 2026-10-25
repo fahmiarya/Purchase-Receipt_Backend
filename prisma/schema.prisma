@@ -75,7 +75,6 @@ enum POStatus {
 model PurchaseOrder {
   id        Int                 @id @default(autoincrement())
   noPO      String              @unique @map("no_po") @db.VarChar(50)
-  noPR      String?             @map("no_pr") @db.VarChar(50)
   vendorId  Int                 @map("vendor_id")
   vendor    Vendor              @relation(fields: [vendorId], references: [id])
   tglPO     DateTime            @map("tgl_po") @db.Date

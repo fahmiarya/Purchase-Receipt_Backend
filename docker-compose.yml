@@ -18,7 +18,27 @@ services:
       retries: 10
       start_period: 30s
 
+  db-init:
+    image: mysql:8.0
+    command: >
+      sh -c "
+        until mysql -h db -uroot -p${MYSQL_ROOT_PASSWORD} -e 'SELECT 1' > /dev/null 2>&1; do
+          echo 'Waiting for MySQL...'; sleep 2;
+        done;
+        mysql -h db -uroot -p${MYSQL_ROOT_PASSWORD} -e '
+          CREATE DATABASE IF NOT EXISTS procurement_db_shadow;
+          GRANT ALL PRIVILEGES ON *.* TO root@\"%\" WITH GRANT OPTION;
+          FLUSH PRIVILEGES;
+        '"
+    depends_on:
+      db:
+        condition: service_healthy
+
   app:
+    command: >
+      sh -c "npx prisma migrate deploy &&
+            npx prisma db seed &&
+            node src/server.js"
     build: .
     restart: unless-stopped
     ports:
@@ -31,6 +51,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
 volumes:
   mysql-data:

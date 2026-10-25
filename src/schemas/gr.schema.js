@@ -2,14 +2,14 @@
 // JSON‑Schema validation for Goods Receipt (GR) endpoints.
 
 module.exports = {
-  // Body schema for creating a Goods Receipt
+
   create: {
     type: 'object',
     required: ['poId', 'tglGR', 'items'],
     additionalProperties: false,
     properties: {
       poId: { type: 'integer' },
-      tglGR: { type: 'string', format: 'date-time' },
+      tglGR: { type: 'string', format: 'date' },
       notes: { type: ['string', 'null'] },
       items: {
         type: 'array',

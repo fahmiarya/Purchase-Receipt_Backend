@@ -1,5 +1,8 @@
 
 const crypto = require('crypto');
+const { Decimal } = require('@prisma/client');
+const { withTransactionRetry } = require('../utils/tx-retry');
+
 
 // Helper: serialize Decimal values to string
 const serializeDecimal = (v) =>
@@ -8,7 +11,7 @@ const serializeDecimal = (v) =>
 // Helper: recalculate PO status based on received quantities
 async function recalcPOStatus(prisma, poId) {
   const po = await prisma.purchaseOrder.findUnique({
-    where: { id: poId },
+    where: { id: poId }, 
     include: { items: true },
   });
   if (!po) return;
@@ -39,21 +42,36 @@ function serializeGR(gr) {
 module.exports = {
   // List Goods Receipts with optional filters & pagination
   async listGR(prisma, query) {
-    const { poId, startDate, endDate, skip = 0, take = 20 } = query;
+    const {
+      po_id, // contract key (matches the Postman collection & frontend)
+      poId, // legacy key, kept for backward compatibility
+      date,
+      startDate, // legacy key, kept for backward compatibility
+      endDate, // legacy key, kept for backward compatibility
+      skip = 0,
+      take = 20,
+    } = query;
     const s = Number(skip);
     const t = Number(take);
     if (!Number.isInteger(s) || s < 0) throw { statusCode: 422, message: 'skip must be a non‑negative integer' };
     if (!Number.isInteger(t) || t <= 0) throw { statusCode: 422, message: 'take must be a positive integer' };
     const where = {};
-    if (poId) where.poId = Number(poId);
+    const poFilter = po_id ?? poId;
+    if (poFilter) where.poId = Number(poFilter);
+    // Contract filter: `date` = exact day (YYYY-MM-DD).
+    if (date) {
+      if (isNaN(Date.parse(date))) throw { statusCode: 422, message: 'Invalid date' };
+      const dayStart = new Date(`${date}T00:00:00`);
+      const dayEnd = new Date(`${date}T23:59:59.999`);
+      where.tglGR = { gte: dayStart, lte: dayEnd };
+    }
     if (startDate) {
       if (isNaN(Date.parse(startDate))) throw { statusCode: 422, message: 'Invalid startDate' };
-      where.tglGR = { gte: new Date(startDate) };
+      where.tglGR = { ...(where.tglGR || {}), gte: new Date(startDate) };
     }
     if (endDate) {
       if (isNaN(Date.parse(endDate))) throw { statusCode: 422, message: 'Invalid endDate' };
-      where.tglGR = where.tglGR || {};
-      where.tglGR.lte = new Date(endDate);
+      where.tglGR = { ...(where.tglGR || {}), lte: new Date(endDate) };
     }
     if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
       throw { statusCode: 422, message: 'startDate cannot be after endDate' };
@@ -111,8 +129,22 @@ module.exports = {
         throw { statusCode: 422, message: 'Qty diterima melebihi sisa PO', details: { poItemId: it.poItemId, qtyRequested: it.qtyDiterima, qtyRemaining: remaining } };
       }
     }
+    // A GR must not precede its PO — compare calendar days (UTC) so time-of-day
+    // differences between `date`/`date-time` inputs cannot flip the result.
+    const toUtcDay = (d) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    const grDay = toUtcDay(new Date(tglGR));
+    const poDay = toUtcDay(new Date(po.tglPO));
+    if (grDay < poDay) {
+      throw {
+        statusCode: 422,
+        message: 'Tanggal GR tidak boleh lebih awal dari tanggal PO',
+        details: { tglGR, tglPO: po.tglPO },
+      };
+    }
     // Transaction – create GR, receipt items, update PO items, stock, recalc status, generate final noGR
-    const result = await prisma.$transaction(async (tx) => {
+    // withTransactionRetry: longer tx timeout + retry on transient
+    // conflict/timeout (P2028/P2034) that previously surfaced as random 500s.
+    const result = await withTransactionRetry(prisma, async (tx) => {
       const tempNoGR = `TMP-${crypto.randomUUID()}`;
       const gr = await tx.goodsReceipt.create({
         data: {
@@ -136,12 +168,12 @@ module.exports = {
       
         await tx.purchaseOrderItem.update({
           where: { id: it.poItemId },
-          data: { qtyDiterima: { increment: it.qtyDiterima } },
+          data: { qtyDiterima: { increment: new Decimal(it.qtyDiterima) } },
         });
         
         await tx.item.update({
           where: { id: poItem.itemId },
-          data: { stock: { increment: it.qtyDiterima } },
+          data: { stock: { increment: new Decimal(it.qtyDiterima) } },
         });
       }
  

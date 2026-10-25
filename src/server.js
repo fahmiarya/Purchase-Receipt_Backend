@@ -4,12 +4,17 @@ const fastify = require('fastify')({ logger: true });
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Health check
-fastify.get('/health', async (request, reply) => {
-  return { status: 'ok' };
-});
+// Make Prisma available to routes
+fastify.decorate('prisma', prisma);
 
-// TODO: add routes for items, vendors, purchase orders, goods receipts
+// Health check endpoint
+fastify.get('/health', async (request, reply) => ({ status: 'ok' }));
+
+// Register route plugins
+fastify.register(require('./routes/item'));
+fastify.register(require('./routes/vendor'));
+fastify.register(require('./routes/purchaseOrder'));
+fastify.register(require('./routes/goodsReceipt'));
 
 const start = async () => {
   try {

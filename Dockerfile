@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 RUN npm config set registry https://registry.npmjs.org/
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # Copy source files
 COPY . .

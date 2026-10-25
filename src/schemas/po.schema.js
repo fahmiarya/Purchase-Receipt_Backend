@@ -8,7 +8,10 @@ module.exports = {
     additionalProperties: false,
     properties: {
       vendorId: { type: "integer" },
-      tglPO: { type: "string", format: "date-time" },
+      // Accept both `2026-10-25` (collection example) and a full ISO timestamp.
+      tglPO: {
+        anyOf: [{ type: "string", format: "date" }, { type: "string", format: "date-time" }],
+      },
       notes: { type: ["string", "null"] },
       items: {
         type: "array",
@@ -33,7 +36,9 @@ module.exports = {
     additionalProperties: false,
     properties: {
       vendorId: { type: "integer" },
-      tglPO: { type: "string", format: "date-time" },
+      tglPO: {
+        anyOf: [{ type: "string", format: "date" }, { type: "string", format: "date-time" }],
+      },
       notes: { type: ["string", "null"] },
     },
   },

@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { POStatus } = require("@prisma/client");
+const { withTransactionRetry } = require("../utils/tx-retry");
 
 const serializeDecimal = (v) =>
   v &&
@@ -41,9 +42,21 @@ module.exports = {
   // ---------------------------------------------------------------------
   // List PO (filters & pagination)
   async listPO(prisma, query) {
-    const { status, vendorId, startDate, endDate, skip = 0, take = 20 } = query;
+    const {
+      status,
+      vendor,
+      vendorId, // legacy key, kept for backward compatibility
+      date,
+      startDate, // legacy key, kept for backward compatibility
+      endDate, // legacy key, kept for backward compatibility
+      skip = 0,
+      take = 20,
+    } = query;
     const allowedStatus = ["open", "partial", "complete", "cancelled"];
-    if (status && !allowedStatus.includes(status)) {
+    // Compare case-insensitively so callers may send "Open", "Partial", etc.
+    // "all" is accepted as "no filter" (legacy "All" chip).
+    const normalizedStatus = status ? String(status).toLowerCase() : undefined;
+    if (normalizedStatus && normalizedStatus !== "all" && !allowedStatus.includes(normalizedStatus)) {
       throw { statusCode: 422, message: "Invalid status filter" };
     }
     const s = Number(skip);
@@ -55,18 +68,26 @@ module.exports = {
       throw { statusCode: 422, message: "take must be a positive integer" };
     }
     const where = {};
-    if (status) where.status = status;
-    if (vendorId) where.vendorId = Number(vendorId);
+    const effectiveStatus = normalizedStatus === "all" ? undefined : normalizedStatus;
+    if (effectiveStatus) where.status = effectiveStatus;
+    const vendorFilter = vendor ?? vendorId;
+    if (vendorFilter) where.vendorId = Number(vendorFilter);
+    // Contract filter: `date` = exact day (YYYY-MM-DD).
+    if (date) {
+      if (isNaN(Date.parse(date))) throw { statusCode: 422, message: "Invalid date" };
+      const dayStart = new Date(`${date}T00:00:00`);
+      const dayEnd = new Date(`${date}T23:59:59.999`);
+      where.tglPO = { gte: dayStart, lte: dayEnd };
+    }
     if (startDate) {
       if (isNaN(Date.parse(startDate)))
         throw { statusCode: 422, message: "Invalid startDate" };
-      where.tglPO = { gte: new Date(startDate) };
+      where.tglPO = { ...(where.tglPO || {}), gte: new Date(startDate) };
     }
     if (endDate) {
       if (isNaN(Date.parse(endDate)))
         throw { statusCode: 422, message: "Invalid endDate" };
-      where.tglPO = where.tglPO || {};
-      where.tglPO.lte = new Date(endDate);
+      where.tglPO = { ...(where.tglPO || {}), lte: new Date(endDate) };
     }
     if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
       throw { statusCode: 422, message: "startDate cannot be after endDate" };
@@ -155,8 +176,9 @@ module.exports = {
       if (!item)
         throw { statusCode: 422, message: `Item ${it.itemId} not found` };
     }
-    // Transaction
-    const po = await prisma.$transaction(async (tx) => {
+    // Transaction – withTransactionRetry: longer timeout + retry on
+    // transient conflict/timeout so PO creation doesn't 500 randomly.
+    const po = await withTransactionRetry(prisma, async (tx) => {
       const tmp = tempNo();
       const created = await tx.purchaseOrder.create({
         data: {
@@ -387,17 +409,17 @@ module.exports = {
     });
     if (!po) throw { statusCode: 404, message: "PurchaseOrder not found" };
 
-    // If PO is not open, return its enum status (cancelled, partial, complete)
+   
     if (po.status !== POStatus.open) {
       return { receiptStatus: po.status };
     }
 
-    // For an open PO, determine if any goods receipt items exist
+    
     const receiptExists = await prisma.goodsReceiptItem.findFirst({
       where: { poItemId: { in: po.items.map((i) => i.id) } },
     });
 
-    // Map receipt existence to enum values: no receipt => open, otherwise => complete
+    
     return { receiptStatus: receiptExists ? POStatus.complete : POStatus.open };
   },
 };

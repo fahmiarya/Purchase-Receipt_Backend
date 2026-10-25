@@ -1,0 +1,23 @@
+{
+  "name": "purchase-receipt-backend",
+  "version": "0.1.0",
+  "description": "Backend for SC3 Procurement (Fastify + Prisma + MySQL)",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node src/server.js",
+    "prisma:generate": "prisma generate --config prisma/prisma.config.ts",
+    "prisma:migrate": "prisma migrate dev --name init --config prisma/prisma.config.ts",
+    "seed": "node prisma/seed.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^5.10.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.24.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "prisma": "^5.22.0"
+  }
+}

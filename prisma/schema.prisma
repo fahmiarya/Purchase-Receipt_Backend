@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+ datasource db {
+  provider = "mysql"
+  url = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+enum Uom {
+  pcs
+  kg
+  gram
+  m
+  cm
+  liter
+  ml
+  set
+  unit
+  lembar
+  batang
+  roll
+}
+
+model ItemCategory {
+  code       String   @id @db.VarChar(10)
+  name       String   @db.VarChar(100)
+  parentCode String?  @map("parent_code") @db.VarChar(10)
+  parent     ItemCategory? @relation("CategoryTree", fields: [parentCode], references: [code])
+  children   ItemCategory[] @relation("CategoryTree")
+  items      Item[]
+
+  @@map("item_categories")
+}
+
+model Item {
+  id                Int        @id @default(autoincrement())
+  code              String     @unique @db.VarChar(50)
+  name              String     @db.VarChar(255)
+  itemCategoryCode  String?    @map("item_category_code") @db.VarChar(10)
+  itemCategory      ItemCategory? @relation(fields: [itemCategoryCode], references: [code])
+  brandCode         String     @default("000") @map("brand_code") @db.VarChar(3)
+  sequence          Int        @default(1)
+  uom               Uom
+  stock             Decimal    @default(0) @db.Decimal(15, 2)
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  purchaseOrderItems PurchaseOrderItem[]
+  goodsReceiptItems  GoodsReceiptItem[]
+
+  @@unique([itemCategoryCode, brandCode, sequence])
+  @@map("items")
+}
+
+model Vendor {
+  id             Int            @id @default(autoincrement())
+  code           String         @unique @db.VarChar(50)
+  name           String         @db.VarChar(255)
+  phone          String?        @db.VarChar(20)
+  address        String?        @db.Text
+  createdAt      DateTime       @default(now()) @map("created_at")
+  purchaseOrders PurchaseOrder[]
+
+  @@map("vendors")
+}
+
+enum POStatus {
+  open
+  partial
+  complete
+  cancelled
+}
+
+model PurchaseOrder {
+  id        Int                 @id @default(autoincrement())
+  noPO      String              @unique @map("no_po") @db.VarChar(50)
+  noPR      String?             @map("no_pr") @db.VarChar(50)
+  vendorId  Int                 @map("vendor_id")
+  vendor    Vendor              @relation(fields: [vendorId], references: [id])
+  tglPO     DateTime            @map("tgl_po") @db.Date
+  status    POStatus            @default(open)
+  notes     String?             @db.Text
+  items     PurchaseOrderItem[]
+  receipts  GoodsReceipt[]
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id            Int               @id @default(autoincrement())
+  poId          Int               @map("po_id")
+  po            PurchaseOrder     @relation(fields: [poId], references: [id])
+  itemId        Int               @map("item_id")
+  item          Item              @relation(fields: [itemId], references: [id])
+  qtyPO         Decimal           @map("qty_po") @db.Decimal(15, 2)
+  hargaPO       Decimal           @map("harga_po") @db.Decimal(15, 2)
+  qtyDiterima   Decimal           @default(0) @map("qty_diterima") @db.Decimal(15, 2)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@map("purchase_order_items")
+}
+
+model GoodsReceipt {
+  id        Int                @id @default(autoincrement())
+  noGR      String             @unique @map("no_gr") @db.VarChar(50)
+  poId      Int                @map("po_id")
+  po        PurchaseOrder      @relation(fields: [poId], references: [id])
+  tglGR     DateTime           @map("tgl_gr") @db.Date
+  notes     String?            @db.Text
+  items     GoodsReceiptItem[]
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id           Int               @id @default(autoincrement())
+  grId         Int               @map("gr_id")
+  gr           GoodsReceipt      @relation(fields: [grId], references: [id])
+  poItemId     Int               @map("po_item_id")
+  poItem       PurchaseOrderItem @relation(fields: [poItemId], references: [id])
+  itemId       Int               @map("item_id")
+  item         Item              @relation(fields: [itemId], references: [id])
+  qtyDiterima  Decimal           @map("qty_diterima") @db.Decimal(15, 2)
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  @@map("goods_receipt_items")
+}

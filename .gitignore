@@ -1,0 +1,12 @@
+# Node.js
+node_modules/
+.env
+.DS_Store
+# Prisma
+prisma/*.db
+# Build output
+dist/
+# Logs
+npm-debug.log
+#etc
+REQUIREMENTS.md

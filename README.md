@@ -92,27 +92,3 @@ npm run dev
 
 Semua endpoint berprefix `/api/v1`. Daftar lengkap + contoh body ada di `SC3.postman_collection.json`.
 
-### Endpoint
-
-| Modul | Endpoint | Keterangan |
-|---|---|---|
-| Health | `GET /health` | |
-| Items | `GET /items?category_code=&search=&include_inactive=` | `category_code` bisa level 1/2/3 — otomatis include kategori turunannya. Default **hanya item aktif**; `include_inactive=true` untuk melihat semua |
-| | `GET /items/:id`, `POST /items`, `PUT /items/:id`, `PATCH /items/:id/toggle-status` | toggle aktif/nonaktif — body `{ "isActive": false }` |
-| | `GET /items/:id/stock` | stok real-time |
-| PO | `GET /purchase-orders?status=&vendor=&date=` | `vendor` = id; `date` = hari persis |
-| | `GET /purchase-orders/:id`, `POST /purchase-orders`, `PUT /purchase-orders/:id`, `PATCH /purchase-orders/:id/cancel` | |
-| | `GET /purchase-orders/:id/receipt-status` | status penerimaan per PO |
-| GR | `GET /goods-receipts?po_id=&date=`, `GET /goods-receipts/:id`, `POST /goods-receipts` | |
-
-Filter tanggal kedua module mendukung **rentang** `startDate`/`endDate` (`YYYY-MM-DD`, inclusive) selain `date` exact day; rentang terbalik/tanggal tidak valid → 422. Semua endpoint list mendukung pagination `skip`/`take` (opsional).
-
-### Aturan bisnis yang di-enforce backend
-
-- **Item create** hanya menerima `{ name, itemCategoryCode, brandCode, uom }`. `code` di-generate otomatis `{L1}-{L2}-{L3}-{brandCode}-{sequence}` (sequence per kombinasi kategori+brand) dan `stock` mulai `0`.
-- **Item update** hanya data master (`name`, `brandCode`, `uom`). `stock` tidak dapat diubah manual — hanya bergerak lewat Goods Receipt.
-- **Item tidak pernah dihapus** — hanya toggle aktif/nonaktif via `PATCH /items/:id/toggle-status` (body `{ isActive }`, idempotent). Item aktif dipakai untuk PO; item nonaktif tetap ada di data history dan bisa diaktifkan kembali. List default hanya menampilkan item aktif.
-- **PO**: update/cancel hanya saat status `open`; cancel ditolak bila sudah punya GR. `status` filter menerima kapitalisasi apa pun (`Open`); `all` = tanpa filter. Item yang **nonaktif ditolak (422)** saat ditarik ke PO.
-- **GR**: hanya untuk PO `open`/`partial`; `qtyDiterima` > 0 dan ≤ sisa PO; **`tglGR` tidak boleh lebih awal dari `tglPO`** (hari sama diperbolehkan); pembuatan GR atomik dalam satu transaksi Prisma (item PO, stok item, status PO) dengan retry otomatis `P2028`/`P2034`.
-- **GR immutable** — tidak ada endpoint edit/delete; koreksi lewat Goods Return (di luar scope).
-- **Deserialisasi decimal**: Prisma `Decimal` dikirim sebagai **string** (`"100"`) — frontend mem-parse dengan helper sehingga tidak ada type error.
